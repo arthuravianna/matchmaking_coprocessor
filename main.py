@@ -1,3 +1,4 @@
+import random
 import sys
 import os
 import numpy as np
@@ -5,7 +6,9 @@ from gensim.models import KeyedVectors
 from node2vec import Node2Vec
 import pandas as pd
 import networkx as nx
-from collections import Counter
+import torch
+
+from MultiHeadAttention import MultiHeadSelfAttention2D
 
 EMBEDDED_DIMENSIONS = 64
 
@@ -32,10 +35,8 @@ def create_synergy_graph(df, heroes_dict):
 
     # Edge Weights cannot Sum to Zero, otherwise node2vec crashes!!!
     edges = SynergyGraph.edges(data=True)
-    edges_to_remove = []
     for edge in edges:
         if edge[2]["weight"] == 0:
-            edges_to_remove.append((edge[0], edge[1]))
             SynergyGraph[edge[0]][edge[1]]["weight"] = 1e-5 # assign a small value
     
     return SynergyGraph
@@ -125,7 +126,7 @@ def user2vec(n_users, n_heroes, pick_rate, pick_win, syn_graph_node_embeddings, 
     
     return [U_syn, U_suppr]
 
-            
+
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise Exception("Expected one argument: <dataset filename>")
@@ -154,15 +155,41 @@ if __name__ == "__main__":
     syn_graph = create_synergy_graph(df, heroes_dict)
     suppr_graph = create_suppression_graph(df, heroes_dict)
 
-    with open("syn_graph.txt", "w") as f:
-        print(syn_graph.adj, file=f)
-
     print("Generating low-dimension Synergy Graph and Suppression Graph")
     syn_graph_node_embeddings, suppr_graph_node_embeddings = hero2vec(syn_graph, suppr_graph)
 
     print("Generating Users embedded vectors")
     U_syn, U_suppr = user2vec(n_players, n_heroes, pick_rate, pick_win, syn_graph_node_embeddings, suppr_graph_node_embeddings)
 
-    print("U_syn:", U_syn)
-    print("U_suppr:", U_suppr)
+    # print("U_syn:", U_syn)
+    # print("U_suppr:", U_suppr)
 
+    # o rela SYN
+    team_a_syn = torch.Tensor(U_syn[:5])
+    team_b_syn = torch.Tensor(U_syn[5:10])
+
+    multihead_attention = MultiHeadSelfAttention2D(EMBEDDED_DIMENSIONS, 4)
+    team_a_T = multihead_attention(team_a_syn)
+    team_b_T = multihead_attention(team_b_syn)
+
+    Wt_syn = torch.rand(1, 64)
+    o_rela_syn = torch.tanh(Wt_syn@(team_a_T-team_b_T))[0]
+
+    # o rela SUPPR
+    team_a_suppr = torch.Tensor(U_suppr[:5])
+    team_b_suppr = torch.Tensor(U_suppr[5:10])
+
+    multihead_attention = MultiHeadSelfAttention2D(EMBEDDED_DIMENSIONS, 4)
+    team_a_T = multihead_attention(team_a_suppr)
+    team_b_T = multihead_attention(team_b_suppr)
+
+    Wt_suppr = torch.rand(1, 64)
+    o_rela_suppr = torch.tanh(Wt_suppr@(team_a_T-team_b_T))[0]
+
+    w_syn = random.random()
+    w_suppr = random.random()
+
+    print(f"{w_syn} * {o_rela_syn} + {w_suppr} * {o_rela_suppr}")
+    y = w_syn * o_rela_syn + w_suppr * o_rela_suppr
+    print(y)
+    
