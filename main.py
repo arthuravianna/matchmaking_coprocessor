@@ -3,9 +3,80 @@ import os
 import numpy as np
 from gensim.models import KeyedVectors
 from node2vec import Node2Vec
-from pandas import read_csv
+import pandas as pd
+import networkx as nx
+from collections import Counter
 
 EMBEDDED_DIMENSIONS = 64
+
+datafile = './datasets/lol_championship.csv'
+data = pd.read_csv(datafile)
+data = data.dropna(subset=["champion"])
+
+def create_synergy_graph():
+    verticies = []
+    win_verticies = []
+    lose_verticies = []
+
+    grouped = data.groupby(["gameid", "team"])
+    for _, group in grouped:
+        champions = group["champion"].tolist()
+        for i in range(len(champions)):
+            for j in range(i + 1, len(champions)):
+                champions_tuple = (champions[i], champions[j])
+                if (champions[j], champions[i]) in verticies:
+                    champions_tuple = (champions[j], champions[i])
+                verticies.append(champions_tuple)
+
+                match_result = group["result"].values[i]
+                if match_result == 1:
+                    win_verticies.append(champions_tuple)
+                elif match_result == 0:
+                    lose_verticies.append(champions_tuple)
+
+    win_counter = Counter(win_verticies)
+    lose_counter = Counter(lose_verticies)
+                
+    SynergyGraph = nx.Graph()
+    for champion_tuple in verticies:
+        edge_weight = win_counter.get(champion_tuple, 0) - lose_counter.get(champion_tuple, 0)
+        SynergyGraph.add_edge(champion_tuple[0], champion_tuple[1], weight=edge_weight)
+
+    return SynergyGraph
+
+
+def create_suppression_graph():
+    verticies = []
+    defeat_vertices = []
+    
+    grouped = data.groupby("gameid")
+    for _, game in grouped:
+        teams = game.groupby("team")
+        team_results = {team: group["result"].values[0] for team, group in teams}
+        for team, group in teams:
+            champions = group["champion"].tolist()
+            result = team_results[team]
+            for other_team, other_group in teams:
+                if team == other_team:
+                    continue
+                
+                other_champions = other_group["champion"].tolist()
+                other_result = team_results[other_team]
+                
+                if result == 1 and other_result == 0: 
+                    for champ_win in champions:
+                        for champ_lose in other_champions:
+                            defeat_vertices.append((champ_win, champ_lose))
+                            verticies.append((champ_win, champ_lose))
+    
+    defeat_counter = Counter(defeat_vertices)
+    
+    SuppressionGraph = nx.DiGraph()
+    for (winner, loser), count in defeat_counter.items():
+        SuppressionGraph.add_edge(winner, loser, weight=count)
+    
+    return SuppressionGraph
+
 
 def calculate_pick(df, players_dict, heroes_dict):
     pick_rate = np.zeros([n_players, n_heroes])
@@ -79,7 +150,7 @@ if __name__ == "__main__":
     if not os.path.isfile(dataset_csv):
         raise Exception("Dataset file does not exists")
 
-    df = read_csv(dataset_csv)
+    df = pd.read_csv(dataset_csv)
     # remove team rows
     df = df[df["champion"].notna()]
 
