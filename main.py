@@ -9,72 +9,55 @@ from collections import Counter
 
 EMBEDDED_DIMENSIONS = 64
 
-datafile = './datasets/lol_championship.csv'
-data = pd.read_csv(datafile)
-data = data.dropna(subset=["champion"])
-
-def create_synergy_graph():
-    verticies = []
-    win_verticies = []
-    lose_verticies = []
-
-    grouped = data.groupby(["gameid", "team"])
-    for _, group in grouped:
-        champions = group["champion"].tolist()
-        for i in range(len(champions)):
-            for j in range(i + 1, len(champions)):
-                champions_tuple = (champions[i], champions[j])
-                if (champions[j], champions[i]) in verticies:
-                    champions_tuple = (champions[j], champions[i])
-                verticies.append(champions_tuple)
-
-                match_result = group["result"].values[i]
-                if match_result == 1:
-                    win_verticies.append(champions_tuple)
-                elif match_result == 0:
-                    lose_verticies.append(champions_tuple)
-
-    win_counter = Counter(win_verticies)
-    lose_counter = Counter(lose_verticies)
-                
+def create_synergy_graph(df, heroes_dict):
     SynergyGraph = nx.Graph()
-    for champion_tuple in verticies:
-        edge_weight = win_counter.get(champion_tuple, 0) - lose_counter.get(champion_tuple, 0)
-        SynergyGraph.add_edge(champion_tuple[0], champion_tuple[1], weight=edge_weight)
 
+    df_groups = df.groupby(["gameid", "team"])
+    for _, df_group in df_groups:
+        group_heroes = df_group["champion"].to_list()
+        result = df_group["result"].to_list()[0]
+
+        for a in range(len(group_heroes)):
+            hero_a = heroes_dict[group_heroes[a]]
+            for b in range(a+1, len(group_heroes)):
+                hero_b = heroes_dict[group_heroes[b]]
+
+                if not SynergyGraph.has_edge(hero_a, hero_b):
+                    SynergyGraph.add_edge(hero_a, hero_b, weight=0.0)
+
+                if result == 1:
+                    SynergyGraph[hero_a][hero_b]["weight"] += 1
+                else:
+                    SynergyGraph[hero_a][hero_b]["weight"] -= 1
+
+    # Edge Weights cannot Sum to Zero, otherwise node2vec crashes!!!
+    edges = SynergyGraph.edges(data=True)
+    edges_to_remove = []
+    for edge in edges:
+        if edge[2]["weight"] == 0:
+            edges_to_remove.append((edge[0], edge[1]))
+            SynergyGraph[edge[0]][edge[1]]["weight"] = 1e-5 # assign a small value
+    
     return SynergyGraph
 
 
-def create_suppression_graph():
-    verticies = []
-    defeat_vertices = []
-    
-    grouped = data.groupby("gameid")
-    for _, game in grouped:
-        teams = game.groupby("team")
-        team_results = {team: group["result"].values[0] for team, group in teams}
-        for team, group in teams:
-            champions = group["champion"].tolist()
-            result = team_results[team]
-            for other_team, other_group in teams:
-                if team == other_team:
-                    continue
-                
-                other_champions = other_group["champion"].tolist()
-                other_result = team_results[other_team]
-                
-                if result == 1 and other_result == 0: 
-                    for champ_win in champions:
-                        for champ_lose in other_champions:
-                            defeat_vertices.append((champ_win, champ_lose))
-                            verticies.append((champ_win, champ_lose))
-    
-    defeat_counter = Counter(defeat_vertices)
-    
-    SuppressionGraph = nx.DiGraph()
-    for (winner, loser), count in defeat_counter.items():
-        SuppressionGraph.add_edge(winner, loser, weight=count)
-    
+def create_suppression_graph(df, heroes_dict):
+    SuppressionGraph = nx.DiGraph() # SuppressionGraph[winner][loser] = how many wins
+
+    df_groups = df.groupby(["gameid"])
+    for _, df_group in df_groups:
+        winning_heroes = df_group.loc[df_group["result"] == 1, "champion"].to_list()
+        losing_heroes = df_group.loc[df_group["result"] == 0, "champion"].to_list()
+
+        for hero_a_name in winning_heroes:
+            hero_a = heroes_dict[hero_a_name]
+            for hero_b_name in losing_heroes:
+                hero_b = heroes_dict[hero_b_name]
+
+                if not SuppressionGraph.has_edge(hero_a, hero_b):
+                    SuppressionGraph.add_edge(hero_a, hero_b, weight=0)
+                SuppressionGraph[hero_a][hero_b]["weight"] += 1
+
     return SuppressionGraph
 
 
@@ -93,8 +76,9 @@ def calculate_pick(df, players_dict, heroes_dict):
 
             pick_rate[players_dict[player_name]][heroes_dict[hero_name]] = len(df_hero_pick) / n_games
 
-            hero_victories = (df_hero_pick["result"] == 1).sum()
-            pick_win[players_dict[player_name]][heroes_dict[hero_name]] = hero_victories / n_victories
+            if n_victories > 0:
+                hero_victories = (df_hero_pick["result"] == 1).sum()
+                pick_win[players_dict[player_name]][heroes_dict[hero_name]] = hero_victories / n_victories
         
     return [pick_rate, pick_win]
 
@@ -117,7 +101,7 @@ def gen_or_load_node2vec_model(g, model_file):
     if os.path.isfile(model_file):
         model = KeyedVectors.load_word2vec_format(model_file, binary=False)
     else:
-        node2vec = Node2Vec(g, dimensions=EMBEDDED_DIMENSIONS, walk_length=30, num_walks=200, workers=4, seed=7) # supply seed for reproducibility
+        node2vec = Node2Vec(g, dimensions=EMBEDDED_DIMENSIONS, walk_length=30, num_walks=200, workers=1, seed=7) # supply seed for reproducibility
         word2vec_model = node2vec.fit(window=10, min_count=1, batch_words=4)
         word2vec_model.wv.save_word2vec_format(model_file)
         model = word2vec_model.wv
@@ -126,8 +110,8 @@ def gen_or_load_node2vec_model(g, model_file):
 
 
 def user2vec(n_users, n_heroes, pick_rate, pick_win, syn_graph_node_embeddings, suppr_graph_node_embeddings):
-    U_syn = np.empty(n_users)
-    U_suppr = np.empty(n_users)
+    U_syn = np.empty([n_users, EMBEDDED_DIMENSIONS])
+    U_suppr = np.empty([n_users, EMBEDDED_DIMENSIONS])
 
     for user in range(n_users):
         syn_total_sum = np.zeros(EMBEDDED_DIMENSIONS)
@@ -152,7 +136,7 @@ if __name__ == "__main__":
 
     df = pd.read_csv(dataset_csv)
     # remove team rows
-    df = df[df["champion"].notna()]
+    df = df[df["player"].str.lower() != "team"]
 
     players = df["player"].unique()
     heroes = df["champion"].unique()
@@ -163,10 +147,22 @@ if __name__ == "__main__":
     players_dict = dict(zip(players, range(n_players)))
     heroes_dict = dict(zip(heroes, range(n_heroes)))
 
+    print("Calculating player/hero pick rate and pick win")
     [pick_rate, pick_win] = calculate_pick(df, players_dict, heroes_dict)
 
-    # generate graphs
-    # TO DO
-    # syn_graph_node_embeddings, suppr_graph_node_embeddings = hero2vec(syn_graph, suppr_graph)
-    # U_syn, U_suppr = user2vec(n_users, n_heroes, pick_rate, pick_win_rate, syn_graph_node_embeddings, suppr_graph_node_embeddings)
+    print("Generating Heroes Synergy Graph and Suppression Graph")
+    syn_graph = create_synergy_graph(df, heroes_dict)
+    suppr_graph = create_suppression_graph(df, heroes_dict)
+
+    with open("syn_graph.txt", "w") as f:
+        print(syn_graph.adj, file=f)
+
+    print("Generating low-dimension Synergy Graph and Suppression Graph")
+    syn_graph_node_embeddings, suppr_graph_node_embeddings = hero2vec(syn_graph, suppr_graph)
+
+    print("Generating Users embedded vectors")
+    U_syn, U_suppr = user2vec(n_players, n_heroes, pick_rate, pick_win, syn_graph_node_embeddings, suppr_graph_node_embeddings)
+
+    print("U_syn:", U_syn)
+    print("U_suppr:", U_suppr)
 
