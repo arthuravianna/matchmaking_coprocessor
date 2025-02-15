@@ -11,6 +11,7 @@ import torch
 from MultiHeadAttention import MultiHeadSelfAttention2D
 
 EMBEDDED_DIMENSIONS = 64
+LEARNING_RATE = 0.1
 
 def create_synergy_graph(df, heroes_dict):
     SynergyGraph = nx.Graph()
@@ -38,7 +39,7 @@ def create_synergy_graph(df, heroes_dict):
     for edge in edges:
         if edge[2]["weight"] == 0:
             SynergyGraph[edge[0]][edge[1]]["weight"] = 1e-5 # assign a small value
-    
+
     return SynergyGraph
 
 
@@ -80,7 +81,7 @@ def calculate_pick(df, players_dict, heroes_dict):
             if n_victories > 0:
                 hero_victories = (df_hero_pick["result"] == 1).sum()
                 pick_win[players_dict[player_name]][heroes_dict[hero_name]] = hero_victories / n_victories
-        
+
     return [pick_rate, pick_win]
 
 def hero2vec(syn_graph, suppr_graph):
@@ -106,7 +107,7 @@ def gen_or_load_node2vec_model(g, model_file):
         word2vec_model = node2vec.fit(window=10, min_count=1, batch_words=4)
         word2vec_model.wv.save_word2vec_format(model_file)
         model = word2vec_model.wv
-    
+
     return model
 
 
@@ -120,10 +121,10 @@ def user2vec(n_users, n_heroes, pick_rate, pick_win, syn_graph_node_embeddings, 
         for hero in range(n_heroes):
             syn_total_sum += pick_rate[user][hero] * syn_graph_node_embeddings[hero]
             suppr_total_sum += pick_win[user][hero] * suppr_graph_node_embeddings[hero]
-        
+
         U_syn[user] = syn_total_sum
         U_suppr[user] = suppr_total_sum
-    
+
     return [U_syn, U_suppr]
 
 
@@ -131,7 +132,7 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         raise Exception("Expected one argument: <dataset filename>")
     dataset_csv = sys.argv[1]
-    
+
     if not os.path.isfile(dataset_csv):
         raise Exception("Dataset file does not exists")
 
@@ -144,7 +145,7 @@ if __name__ == "__main__":
 
     n_players = len(players)
     n_heroes = len(heroes)
-    
+
     players_dict = dict(zip(players, range(n_players)))
     heroes_dict = dict(zip(heroes, range(n_heroes)))
 
@@ -163,6 +164,8 @@ if __name__ == "__main__":
 
     # print("U_syn:", U_syn)
     # print("U_suppr:", U_suppr)
+
+    # Starting the training
 
     # o rela SYN
     team_a_syn = torch.Tensor(U_syn[:5])
@@ -192,4 +195,25 @@ if __name__ == "__main__":
     print(f"{w_syn} * {o_rela_syn} + {w_suppr} * {o_rela_suppr}")
     y = w_syn * o_rela_syn + w_suppr * o_rela_suppr
     print(y)
-    
+
+
+    # Hidden Unit Error for y
+    if (df['result'].iloc[0]):
+        d_y = y*(1-y)*(1-y)
+    else:
+        d_y = y*(1-y)*(-1-y)
+
+    # Hidden Unit Error for o_rela_syn
+    d_syn = o_rela_syn * (1 - o_rela_syn) * (w_syn * d_y)
+
+    # Hidden Unit Error for o_rela_suppr
+    d_suppr = o_rela_suppr * (1 - o_rela_suppr) * (w_suppr * d_y)
+
+    # Weight Updates l1
+    w_syn = w_syn + LEARNING_RATE * d_y * o_rela_syn
+    Wt_suppr = Wt_suppr + LEARNING_RATE * d_y * o_rela_suppr
+
+    # Weight Updates l2
+    for j in range(len(Wt_syn)):
+        Wt_syn[i] = Wt_syn[i] + LEARNING_RATE * d_syn * (team_a_T[i] - team_b_T[i])
+        Wt_suppr[i] = Wt_suppr[i] + LEARNING_RATE * d_suppr * (team_a_T[i] - team_b_T[i])
