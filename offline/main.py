@@ -165,73 +165,110 @@ if __name__ == "__main__":
     # print("U_syn:", U_syn)
     # print("U_suppr:", U_suppr)
 
-    # Starting the training
-
-    # o rela SYN
-    team_a_syn = np.array(U_syn[:5])
-    team_b_syn = np.array(U_syn[5:10])
-
-    multihead_attention = MultiHeadSelfAttention2D(EMBEDDED_DIMENSIONS, 4)
-    team_a_T = multihead_attention.forward(team_a_syn)
-    team_b_T = multihead_attention.forward(team_b_syn)
 
     Wt_syn = np.random.rand(1, 64)
-    o_rela_syn = np.tanh(np.dot(Wt_syn, (team_a_T-team_b_T)))[0]
-
-    # o rela SUPPR
-    team_a_suppr = np.array(U_suppr[:5])
-    team_b_suppr = np.array(U_suppr[5:10])
-
-    multihead_attention = MultiHeadSelfAttention2D(EMBEDDED_DIMENSIONS, 4)
-    team_a_T = multihead_attention.forward(team_a_suppr)
-    team_b_T = multihead_attention.forward(team_b_suppr)
-
     Wt_suppr = np.random.rand(1, 64)
-    o_rela_suppr = np.tanh(np.dot(Wt_suppr, (team_a_T-team_b_T)))[0]
-
     w_syn = random.random()
     w_suppr = random.random()
 
-    print(f"{w_syn} * {o_rela_syn} + {w_suppr} * {o_rela_suppr}")
-    y = w_syn * o_rela_syn + w_suppr * o_rela_suppr
-    print(y)
+    multihead_attention_syn = MultiHeadSelfAttention2D(EMBEDDED_DIMENSIONS, 4)
+    multihead_attention_suppr = MultiHeadSelfAttention2D(EMBEDDED_DIMENSIONS, 4)
+
+    # Starting the training
+
+    for index in range(int(len(U_syn)/10)):
+        first = index*10
+        print(first)
+        # o rela SYN
+        team_a_syn = np.array(U_syn[first:first+5])
+        team_b_syn = np.array(U_syn[first+5:first+10])
 
 
-    # Hidden Unit Error for y
-    if (df['result'].iloc[0]):
-        d_y = y*(1-y)*(1-y)
-    else:
-        d_y = y*(1-y)*(-1-y)
+        team_a_T = multihead_attention_syn.forward(team_a_syn)
+        team_b_T = multihead_attention_syn.forward(team_b_syn)
 
-    # Hidden Unit Error for o_rela_syn
-    d_syn = o_rela_syn * (1 - o_rela_syn) * (w_syn * d_y)
 
-    # Hidden Unit Error for o_rela_suppr
-    d_suppr = o_rela_suppr * (1 - o_rela_suppr) * (w_suppr * d_y)
+        o_rela_syn = np.tanh(np.dot(Wt_syn, (team_a_T-team_b_T)))[0]
 
-    # Weight Updates l1
-    print(f"w_syn: {w_syn}")
-    w_syn = w_syn + LEARNING_RATE * d_y * o_rela_syn
-    print(f"w_syn updated: {w_syn}")
-    print(f"w_suppr: {w_suppr}")
-    Wt_suppr = Wt_suppr + LEARNING_RATE * d_y * o_rela_suppr
-    print(f"w_suppr updated: {w_suppr}")
+        # o rela SUPPR
+        team_a_suppr = np.array(U_suppr[first:first+5])
+        team_b_suppr = np.array(U_suppr[first+5:first+10])
 
-    # Weight Updates l2
-    print(f"Wt_syn: {Wt_syn}")
-    print(f"Wt_suppr: {Wt_suppr}")
-    for i in range(len(Wt_syn)):
-        Wt_syn[i] = Wt_syn[i] + LEARNING_RATE * d_syn * (team_a_T[i] - team_b_T[i])
-        Wt_suppr[i] = Wt_suppr[i] + LEARNING_RATE * d_suppr * (team_a_T[i] - team_b_T[i])
 
-    print(f"Wt_syn updated: {Wt_syn}")
-    print(f"Wt_suppr updated: {Wt_suppr}")
+        team_a_T = multihead_attention_suppr.forward(team_a_suppr)
+        team_b_T = multihead_attention_suppr.forward(team_b_suppr)
 
+
+        o_rela_suppr = np.tanh(np.dot(Wt_suppr, (team_a_T-team_b_T)))[0]
+
+        #print(f"{w_syn} * {o_rela_syn} + {w_suppr} * {o_rela_suppr}")
+        y = w_syn * o_rela_syn + w_suppr * o_rela_suppr
+        #print(y)
+
+
+        # Hidden Unit Error for y
+        if (df['result'].iloc[0]):
+            d_y = y*(1-y)*(1-y)
+        else:
+            d_y = y*(1-y)*(-1-y)
+
+        # Hidden Unit Error for o_rela_syn
+        d_syn = o_rela_syn * (1 - o_rela_syn) * (w_syn * d_y)
+
+        # Hidden Unit Error for o_rela_suppr
+        d_suppr = o_rela_suppr * (1 - o_rela_suppr) * (w_suppr * d_y)
+
+        # Weight Updates l1
+        #print(f"w_syn: {w_syn}")
+        w_syn = w_syn + LEARNING_RATE * d_y * o_rela_syn
+        #print(f"w_syn updated: {w_syn}")
+        #print(f"w_suppr: {w_suppr}")
+        w_suppr = w_suppr + LEARNING_RATE * d_y * o_rela_suppr
+        #print(f"w_suppr updated: {w_suppr}")
+
+        # Weight Updates l2
+        #print(f"Wt_syn: {Wt_syn}")
+        #print(f"Wt_suppr: {Wt_suppr}")
+        for i in range(len(Wt_syn)):
+            Wt_syn[i] = Wt_syn[i] + LEARNING_RATE * d_syn * (team_a_T[i] - team_b_T[i])
+            Wt_suppr[i] = Wt_suppr[i] + LEARNING_RATE * d_suppr * (team_a_T[i] - team_b_T[i])
+
+
+        # Hidden Unit Error for (team_a_T[i] - team_b_T[i])
+
+        d_T_syn = np.zeros((1,64))
+        d_T_supper = np.zeros((1,64))
+
+        # Hidden Unit Error for team_a_T[i] - team_b_T[i]
+        for i in range(len(Wt_syn)):
+            # syn backpropagation
+            d_T_syn[i] = (team_a_T[i] - team_b_T[i]) * (1 - (team_a_T[i] - team_b_T[i])) * (Wt_syn[i] * d_syn) * LEARNING_RATE
+            # suppr backpropagation
+            d_T_supper[i] = (team_a_T[i] - team_b_T[i]) * (1 - (team_a_T[i] - team_b_T[i])) * (Wt_suppr[i] * d_suppr) * LEARNING_RATE
+
+
+        W_plus = np.array([[0.970],[1.214],[1.070],[0.729],[0.873]])
+        delta_T_syn = np.dot(W_plus, d_T_syn)
+        delta_T_suppr = np.dot(W_plus, d_T_supper)
+
+        # syn backpropagation
+        multihead_attention_syn.update_w(np.dot(np.transpose(delta_T_syn), team_a_syn))
+        multihead_attention_syn.update_w(np.dot(np.transpose(delta_T_syn), team_b_syn))
+
+        # suppr backpropagation
+        multihead_attention_suppr.update_w(np.dot(np.transpose(delta_T_suppr), team_a_suppr))
+        multihead_attention_suppr.update_w(np.dot(np.transpose(delta_T_suppr), team_b_suppr))
+
+    WQ_syn, WK_syn, WV_syn = multihead_attention_syn.get_weights()
+    WQ_suppr, WK_suppr, WV_suppr = multihead_attention_suppr.get_weights()
+
+    #MISSING: WQ_syn, WK_syn, WV_syn, WQ_suppr, WK_suppr, WV_suppr
     with open("optMatch.json", "w") as opMatchFile:
         print(json.dumps({
                 "w_syn": w_syn.item(),
-                #"w_suppr": w_suppr.item(),
-                "w_suppr": w_suppr,
+                "w_suppr": w_suppr.item(),
+                #"Wt_syn": Wt_syn.to_list(),
+                #"Wt_suppr": Wt_suppr.to_list(),
                 "U_syn": U_syn.tolist(),
                 "U_suppr": U_suppr.tolist()
             }, indent=None),

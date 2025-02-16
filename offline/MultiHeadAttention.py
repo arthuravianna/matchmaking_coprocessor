@@ -5,7 +5,7 @@ class MultiHeadSelfAttention2D:
         super(MultiHeadSelfAttention2D, self).__init__()
         assert embed_size % num_heads == 0, "Embedding size must be divisible by number of heads"
 
-        self.embed_size = embed_size  
+        self.embed_size = embed_size
         self.num_heads = num_heads
         self.head_dim = embed_size // num_heads  # Dimension per head
 
@@ -49,12 +49,28 @@ class MultiHeadSelfAttention2D:
 
         # ADC, Jungle, Middle, Support, Top
         W = np.array([0.2, 0.25, 0.22, 0.15, 0.18])
-        
+
         #output = np.dot(attention_output, self.W_out)
         output = np.dot(W, attention_output)
         output = self.relu(output)  # Apply ReLU
 
         return output
+
+    def update_w(self, Delta):
+        for i in range(len(self.W_q)):
+            for j in range(len(self.W_q[0])):
+                self.W_q[i][j] = self.W_q[i][j] + Delta[i][j]
+                self.W_k[i][j] = self.W_k[i][j] + Delta[i][j]
+                self.W_v[i][j] = self.W_v[i][j] + Delta[i][j]
+
+
+    def print_W_q(self):
+        print("W_q:")
+        print(self.W_q)
+
+    def get_weights(self):
+        return self.W_q, self.W_k, self.W_v
+
 
 if __name__ == "__main__":
     # Example Usage
