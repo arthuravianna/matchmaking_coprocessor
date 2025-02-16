@@ -210,10 +210,19 @@ if __name__ == "__main__":
     d_suppr = o_rela_suppr * (1 - o_rela_suppr) * (w_suppr * d_y)
 
     # Weight Updates l1
+    print(f"w_syn: {w_syn}")
     w_syn = w_syn + LEARNING_RATE * d_y * o_rela_syn
+    print(f"w_syn updated: {w_syn}")
+    print(f"w_suppr: {w_suppr}")
     Wt_suppr = Wt_suppr + LEARNING_RATE * d_y * o_rela_suppr
+    print(f"w_suppr updated: {w_suppr}")
 
     # Weight Updates l2
-    for j in range(len(Wt_syn)):
+    print(f"Wt_syn: {Wt_syn}")
+    print(f"Wt_suppr: {Wt_suppr}")
+    for i in range(len(Wt_syn)):
         Wt_syn[i] = Wt_syn[i] + LEARNING_RATE * d_syn * (team_a_T[i] - team_b_T[i])
         Wt_suppr[i] = Wt_suppr[i] + LEARNING_RATE * d_suppr * (team_a_T[i] - team_b_T[i])
+
+    print(f"Wt_syn updated: {Wt_syn}")
+    print(f"Wt_suppr updated: {Wt_suppr}")
