@@ -1,0 +1,5 @@
+--find-links https://felipefg.github.io/pip-wheels-riscv/wheels/
+
+requests == 2.31.0
+numpy == 1.26.2
+#gensim == 4.3.3
