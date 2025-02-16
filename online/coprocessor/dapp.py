@@ -17,6 +17,10 @@ logger.info(f"HTTP rollup_server url is {rollup_server}")
 
 optMatch = OptMatch()
 
+def str_to_eth_hex(s):
+    hex = "0x" + s.encode('utf-8').hex()
+    return hex
+
 def emit_notice(data):
     notice_payload = {"payload": data["payload"]}
     response = requests.post(rollup_server + "/notice", json=notice_payload)
@@ -46,6 +50,7 @@ def find_best_non_overlapping_matches(player_ids):
     # Step 1: Evaluate all matches and store in a max-heap
     for match in generate_5vs5_matches(player_ids):
         team_a, team_b = match
+        logger.info(f"\nTEAM A {team_a}\nTEAM B {team_b}")
         #quality = quality_function(team_a, team_b)
         y = optMatch.estimate_match_quality(team_a, team_b)
         quality = math.cos(y) # closer to 0 the better
@@ -77,31 +82,16 @@ def handle_advance(data):
         player_ids = json.loads(payload_str)
 
         result = find_best_non_overlapping_matches(player_ids)
-        emit_notice({ "payload": json.dumps(result).encode('utf-8').hex() })
+        emit_notice({ "payload": str_to_eth_hex(json.dumps(result)) })
+
+        return "accept"
 
     except Exception as error:
         print(f"Error processing payload: {error}")
         return "reject"
-    
-def handle_inspect(data):
-    logger.info(f"Received advance request data {data}")
-    payload_hex = data['payload']
-    
-    try:
-        payload_str = bytes.fromhex(payload_hex[2:]).decode('utf-8')
-        player_ids = json.loads(payload_str)
-
-        result = find_best_non_overlapping_matches(player_ids)
-        requests.post(rollup_server+"/report", json={ "payload": json.dumps(result).encode('utf-8').hex() })
-
-    except Exception as error:
-        print(f"Error processing payload: {error}")
-        return "reject"
-
 
 handlers = {
     "advance_state": handle_advance,
-    "inspect_state": handle_inspect
 }
 
 finish = {"status": "accept"}

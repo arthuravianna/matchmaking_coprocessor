@@ -2,7 +2,7 @@
 FROM --platform=linux/riscv64 cartesi/python:3.10-slim-jammy
 
 LABEL io.cartesi.rollups.sdk_version=0.11.1
-LABEL io.cartesi.rollups.ram_size=128Mi
+LABEL io.cartesi.rollups.ram_size=256Mi
 
 ARG DEBIAN_FRONTEND=noninteractive
 RUN <<EOF

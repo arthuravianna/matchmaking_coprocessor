@@ -32,7 +32,7 @@ mv optMatch.json ../online/coprocessor
 cd coprocessor && cartesi-coprocessor start-devnet
 ```
 ```shell
-cd .. && cartesi-coprocessor publish --network devnet
+cartesi-coprocessor publish --network devnet
 ```
 
 ```shell
@@ -40,5 +40,13 @@ cartesi-coprocessor address-book
 ```
 
 ```shell
-cd contracts && cartesi-coprocessor deploy --contract-name CounterCaller --network devnet --constructor-args <task_issuer_address> <machine_hash>
+cd ../contracts && cartesi-coprocessor deploy --contract-name MatchmakingCaller --network devnet --constructor-args <task_issuer_address> <machine_hash>
+```
+
+## INTERACTING
+```shell
+INPUT=$(cast --from-utf8 "[ 704, 277, 750, 360, 734, 271, 807, 150, 560, 519, 951 ]")
+cast send 0x1429859428C0aBc9C2C47C8Ee9FBaf82cFA0F20f "runExecution(bytes)" ${INPUT} \
+    --rpc-url http://localhost:8545 \
+    --private-key 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80
 ```
